@@ -1,18 +1,4 @@
-<think>Per un README.md completo, dovrò includere:
-1. Titolo e descrizione iniziale
-2. Immagine o GIF (suggerirò di aggiungerla)
-3. Caratteristiche
-4. Requisiti hardware
-5. Requisiti software
-6. Istruzioni di montaggio
-7. Configurazione
-8. Utilizzo
-9. Risoluzione dei problemi
-10. Note sul codice
-11. Licenza
-12. Ringraziamenti
-
-Manterrò lo stile informativo ma con un tocco divertente dato il tema di Back to the Future.</think># Back to the Future Time Circuits Display
+# Back to the Future Time Circuits Display
 
 ![BTTF Time Circuits](/images/time-circuits.jpg)
 ![Interface](/images/interface.jpg)
