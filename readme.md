@@ -1,9 +1,6 @@
 # Back to the Future Time Circuits Display
 
-<p align="center">
-  <img src="/images/time-circuits.jpg" width="48%" />
-  <img src="/images/interface.jpg" width="48%" />
-</p>
+![BTTF Time Circuits](/images/time-circuits.jpg)
 
 A fully functional recreation of the iconic time circuits display from the Back to the Future movie trilogy, powered by an ESP32 microcontroller. Show destination, present, and last departure time just like Doc Brown's DeLorean!
 
@@ -18,6 +15,8 @@ A fully functional recreation of the iconic time circuits display from the Back 
   - Mobile-friendly design
   - Touch-tone style keypad with authentic DTMF sounds
   - Color selection buttons for controlling each display set
+
+![Interface](/images/interface.jpg)
 
 - **Visual Effects**:
   - Slot-machine style animations when changing values
