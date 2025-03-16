@@ -1,3 +1,6 @@
+// From an original idea by Davide Gatti - Survival Hacking
+// https://www.youtube.com/watch?v=h1pgLkXOKSA
+// Ported by lou112ep - https://github.com/lou112ep for esp32
 #include <TM1637Display.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_LEDBackpack.h>
