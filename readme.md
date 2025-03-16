@@ -14,7 +14,8 @@
 
 Manterrò lo stile informativo ma con un tocco divertente dato il tema di Back to the Future.</think># Back to the Future Time Circuits Display
 
-![Add a project image here](https://example.com/your-image.jpg)
+![BTTF Time Circuits](/images/time-circuits.jpg)
+![Interface](/images/interface.jpg)
 
 A fully functional recreation of the iconic time circuits display from the Back to the Future movie trilogy, powered by an ESP32 microcontroller. Show destination, present, and last departure time just like Doc Brown's DeLorean!
 
