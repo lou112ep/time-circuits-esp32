@@ -7,92 +7,122 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h> // Added for Captive Portal
 #include "driver/ledc.h"
 #include <time.h>
+#include <RTClib.h> // Added for RTC
 
-// Configurazione WiFi
-const char* ssid = "your-ssid";      // Inserisci il nome della tua rete WiFi
-const char* password = "your-password";  // Inserisci la password della tua rete WiFi
+// Structure for famous dates
+struct FamousDate {
+  int year;
+  int month;
+  int day;
+  int hour;
+  int minute;
+  const char* description;
+};
 
-// Display ROSSI
-#define RED_CLK 21    // CLK comune per tutti i display rossi
+// List of famous dates (movie and history)
+FamousDate famousDates[] = {
+  {1955, 11, 5, 22, 4, "Clock Tower Lightning Strike"},
+  {2015, 10, 21, 16, 29, "Arrival in the future"},
+  {1985, 10, 26, 1, 21, "First time travel"},
+  {1885, 9, 2, 8, 0, "Arrival in the Old West"},
+  {1969, 7, 20, 20, 17, "Apollo 11 Moon Landing"},
+  {1492, 10, 12, 12, 0, "Discovery of America"},
+  {1989, 11, 9, 18, 53, "Fall of the Berlin Wall"},
+  {1776, 7, 4, 12, 0, "USA Declaration of Independence"},
+  {1945, 5, 8, 23, 1, "End of WWII in Europe"}
+};
+
+// WiFi Configuration in Access Point mode
+const char* ap_ssid = "BTTF-TimeCircuits";
+const char* ap_password = "martymcfly"; // Optional password, set to NULL for an open network
+
+// RED Displays
+#define RED_CLK 21    // Common CLK for all red displays
 #define RED_TIME_DIO 22
 #define RED_YEAR_DIO 25
 #define RED_DAY_DIO 27
 
-// Display ARANCIONI
-#define AMBER_CLK 17    // CLK comune per tutti i display arancioni
+// AMBER Displays
+#define AMBER_CLK 17    // Common CLK for all amber displays
 #define AMBER_TIME_DIO 16
 #define AMBER_YEAR_DIO 4
 #define AMBER_DAY_DIO 19
 
-// Display VERDI (nuovi)
-#define GREEN_CLK 26    // CLK comune per tutti i display verdi
+// GREEN Displays (new)
+#define GREEN_CLK 26    // Common CLK for all green displays
 #define GREEN_TIME_DIO 18
 #define GREEN_YEAR_DIO 23
 #define GREEN_DAY_DIO 13
 
-// Bus I2C condiviso per entrambi i display alfanumerici
+// Shared I2C bus for all alphanumeric displays
 #define SHARED_SDA 33
 #define SHARED_SCL 32
 
-// Indirizzi I2C
-#define RED_MONTH_ADDR 0x70    // Nessun ponticello
-#define AMBER_MONTH_ADDR 0x74  // A2 ponticellato
-#define GREEN_MONTH_ADDR 0x72  // 0x70 + 2
+// I2C Addresses
+#define RED_MONTH_ADDR 0x70    // No jumpers
+#define AMBER_MONTH_ADDR 0x74  // A2 jumpered
+#define GREEN_MONTH_ADDR 0x72  // A1 jumpered
 
-// Definizione pin speaker
+// Speaker pin definition
 #define BUZZER_PIN 5
 
-// Configurazione PWM per il buzzer
+// PWM configuration for the buzzer
 #define BUZZER_CHANNEL 0
-#define BUZZER_FREQ 800    // Frequenza del beep in Hz
+#define BUZZER_FREQ 800    // Beep frequency in Hz
 #define BUZZER_RESOLUTION 8
 
-// Configurazione NTP
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600;     // Fuso orario (3600 = GMT+1)
-const int   daylightOffset_sec = 0;    // Modificato: 0 perché l'ora legale è già gestita
-unsigned long lastNtpSync = 0;
-const unsigned long ntpSyncInterval = 3600000; // Sincronizzazione ogni ora (in millisecondi)
+// NTP Configuration - REMOVED
+// const char* ntpServer = "pool.ntp.org";
+// const long  gmtOffset_sec = 3600;     // Timezone (3600 = GMT+1)
+// const int   daylightOffset_sec = 0;    // Modified: 0 because DST is already handled
+// unsigned long lastNtpSync = 0;
+// const unsigned long ntpSyncInterval = 3600000; // Sync every hour (in milliseconds)
 
-// Inizializzazione oggetti display ROSSI
+// RED display objects initialization
 TM1637Display displayRedTime(RED_CLK, RED_TIME_DIO);
 TM1637Display displayRedYear(RED_CLK, RED_YEAR_DIO);
 TM1637Display displayRedDay(RED_CLK, RED_DAY_DIO);
 Adafruit_AlphaNum4 displayRedMonth = Adafruit_AlphaNum4();
 
-// Inizializzazione oggetti display ARANCIONI
+// AMBER display objects initialization
 TM1637Display displayAmberTime(AMBER_CLK, AMBER_TIME_DIO);
 TM1637Display displayAmberYear(AMBER_CLK, AMBER_YEAR_DIO);
 TM1637Display displayAmberDay(AMBER_CLK, AMBER_DAY_DIO);
 Adafruit_AlphaNum4 displayAmberMonth = Adafruit_AlphaNum4();
 
-// Inizializzazione oggetti display VERDI
+// GREEN display objects initialization
 TM1637Display displayGreenTime(GREEN_CLK, GREEN_TIME_DIO);
 TM1637Display displayGreenYear(GREEN_CLK, GREEN_YEAR_DIO);
 TM1637Display displayGreenDay(GREEN_CLK, GREEN_DAY_DIO);
 Adafruit_AlphaNum4 displayGreenMonth = Adafruit_AlphaNum4();
 
-// Variabile per memorizzare il colore selezionato
-String selectedColor = "red";  // Default: rosso
+// Variable to store the selected color
+String selectedColor = "red";  // Default: red
 
-// Inizializzazione WebServer sulla porta 80
+// WebServer initialization on port 80
 WebServer server(80);
+DNSServer dnsServer; // DNS object for the Captive Portal
+RTC_DS3231 rtc; // Object for the RTC module
 
-// Variabili globali per il lampeggio dei due punti
+// Global variables for the colon blink
 unsigned long previousMillis = 0;
-const long blinkInterval = 500;    // Intervallo di lampeggio
-bool colonOn = false;              // Stato corrente dei due punti
-String redTimeValue = "";         // Valore orario rosso
-String amberTimeValue = "";       // Valore orario arancione
-String greenTimeValue = "";       // Valore orario verde
+const long blinkInterval = 500;    // Blink interval
+bool colonOn = false;              // Current state of the colon
+String redTimeValue = "";         // Red time value
+String amberTimeValue = "";       // Amber time value
+String greenTimeValue = "";       // Green time value
 
-// Aggiungiamo variabili per tenere traccia dell'ultimo minuto visualizzato
+// Variables to keep track of the last displayed minute
 unsigned long lastMinuteUpdate = 0;
 int lastMinuteDisplayed = -1;
 
-// Pagina HTML con CSS e JavaScript integrati
+// Buffer variables for setting the RTC date
+int greenYear, greenMonth, greenDay, greenHour, greenMinute;
+
+// HTML page with integrated CSS and JavaScript
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML>
 <html>
@@ -157,10 +187,10 @@ const char index_html[] PROGMEM = R"rawliteral(
     let displayValue = '';
     let inputMode = 'month';
     let monthValue = '', dayValue = '', yearValue = '', timeValue = '';
-    let selectedColor = 'red'; // Default: rosso
+    let selectedColor = 'red'; // Default: red
     let audioContext = null;
 
-    // Frequenze DTMF per ogni tasto
+    // DTMF frequencies for each key
     const DTMF_FREQUENCIES = {
       '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
       '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
@@ -175,13 +205,13 @@ const char index_html[] PROGMEM = R"rawliteral(
 
       if (DTMF_FREQUENCIES[key]) {
         const [freq1, freq2] = DTMF_FREQUENCIES[key];
-        const duration = 0.1;  // durata del suono in secondi
+        const duration = 0.1;  // sound duration in seconds
         
         const osc1 = audioContext.createOscillator();
         const osc2 = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
         
-        gainNode.gain.value = 0.1;  // volume ridotto
+        gainNode.gain.value = 0.1;  // reduced volume
         
         osc1.connect(gainNode);
         osc2.connect(gainNode);
@@ -280,7 +310,7 @@ const char index_html[] PROGMEM = R"rawliteral(
             .then(response => response.text())
             .then(() => {
               timeValue = displayValue;
-              inputMode = 'month'; // Torna al mese per il prossimo ciclo
+              inputMode = 'month'; // Return to month for the next cycle
               displayValue = '';
               updateDisplay();
               updateInputMode();
@@ -301,46 +331,46 @@ const char index_html[] PROGMEM = R"rawliteral(
       document.getElementById('display').innerText = displayValue.padStart(maxLength, '0');
     }
     
-    // Inizializza la modalità di input
+    // Initialize the input mode
     updateInputMode();
   </script>
 </body>
 </html>
 )rawliteral";
 
-// Funzione per emettere un breve beep
+// Function to emit a short beep
 void shortBeep() {
   tone(BUZZER_PIN, 2000);
-  delay(10);               // Ridotto da 20ms a 10ms
+  delay(10);               // Reduced from 20ms to 10ms
   noTone(BUZZER_PIN);
 }
 
-// Funzione per animazione display numerico (per tempo, anno e giorno)
+// Function for numeric display animation (for time, year, and day)
 void animateNumber(TM1637Display &display, int finalNumber, int digits = 4, bool withColon = false) {
-  int shuffleTime = 1000;  // Ripristinato a 1000ms 
-  int updateInterval = 5;  // Manteniamo questo rapido per fluidità
-  int beepInterval = 50;   // Nuovo: intervallo minimo tra i beep
+  int shuffleTime = 1000;  // Restored to 1000ms 
+  int updateInterval = 5;  // Kept this fast for fluidity
+  int beepInterval = 50;   // New: minimum interval between beeps
   int startTime = millis();
-  int lastBeepTime = 0;    // Nuovo: per tracciare l'ultimo beep
+  int lastBeepTime = 0;    // New: to track the last beep
   
-  // Array per tenere traccia di quali posizioni sono state "fissate"
+  // Array to keep track of which positions have been "fixed"
   bool digitFixed[4] = {false, false, false, false};
   int finalDigits[4];
   
-  // Estrai le cifre finali
+  // Extract final digits
   int temp = finalNumber;
   for(int i = digits-1; i >= 0; i--) {
     finalDigits[i] = temp % 10;
     temp /= 10;
   }
   
-  // Fase di shuffle
+  // Shuffle phase
   while(millis() - startTime < shuffleTime) {
     uint8_t segments[4] = {0, 0, 0, 0};
     
     for(int i = 0; i < digits; i++) {
       if(!digitFixed[i]) {
-        // Nuovo: controlla l'intervallo tra i beep
+        // New: check the interval between beeps
         if(millis() - lastBeepTime >= beepInterval) {
           shortBeep();
           lastBeepTime = millis();
@@ -351,7 +381,7 @@ void animateNumber(TM1637Display &display, int finalNumber, int digits = 4, bool
           segments[i+1] = display.encodeDigit(random(10));
         }
       } else {
-        // Mantieni il numero finale per le posizioni già fissate
+        // Keep the final number for already fixed positions
         if(digits == 4) {
           segments[i] = display.encodeDigit(finalDigits[i]);
         } else {
@@ -360,7 +390,7 @@ void animateNumber(TM1637Display &display, int finalNumber, int digits = 4, bool
       }
     }
     
-    // Mostra i segmenti
+    // Show segments
     display.setSegments(segments);
     if(withColon && (millis() % 1000 < 500)) {
       display.showNumberDecEx(finalNumber, 0b01000000, true);
@@ -368,7 +398,7 @@ void animateNumber(TM1637Display &display, int finalNumber, int digits = 4, bool
     
     delay(updateInterval);
     
-    // Fissa progressivamente le cifre da sinistra a destra
+    // Progressively fix digits from left to right
     int elapsed = millis() - startTime;
     for(int i = 0; i < digits; i++) {
       if(elapsed > (shuffleTime/digits * i) && !digitFixed[i]) {
@@ -377,7 +407,7 @@ void animateNumber(TM1637Display &display, int finalNumber, int digits = 4, bool
     }
   }
   
-  // Mostra il numero finale
+  // Show the final number
   if(withColon) {
     display.showNumberDecEx(finalNumber, 0b01000000, true);
   } else if(digits == 4) {
@@ -387,24 +417,24 @@ void animateNumber(TM1637Display &display, int finalNumber, int digits = 4, bool
   }
 }
 
-// Funzione per animazione display alfanumerico (mese)
+// Function for alphanumeric display animation (month)
 void animateMonth(const char* monthStr, Adafruit_AlphaNum4 &display) {
-  int shuffleTime = 1000;  // Ripristinato a 1000ms
-  int updateInterval = 10;  // Manteniamo questo rapido per fluidità
+  int shuffleTime = 1000;  // Restored to 1000ms
+  int updateInterval = 10; // Kept this fast for fluidity
   int startTime = millis();
   int len = strlen(monthStr);
-  int startPos = 4 - len;  // Per allineamento a destra
+  int startPos = 4 - len;  // For right alignment
   
-  // Array per tenere traccia di quali posizioni sono state "fissate"
+  // Array to keep track of which positions have been "fixed"
   bool charFixed[4] = {false, false, false, false};
   
-  // Fase di shuffle
+  // Shuffle phase
   while(millis() - startTime < shuffleTime) {
-    // Genera caratteri casuali e emette beep
+    // Generate random characters and beep
     for(int i = 0; i < len; i++) {
       if(!charFixed[i]) {
-        shortBeep();  // Beep per ogni cambio di lettera
-        display.writeDigitAscii(startPos + i, random(65, 90)); // Lettere maiuscole A-Z
+        shortBeep();  // Beep for each letter change
+        display.writeDigitAscii(startPos + i, random(65, 90)); // Uppercase letters A-Z
       } else {
         display.writeDigitAscii(startPos + i, monthStr[i]);
       }
@@ -412,7 +442,7 @@ void animateMonth(const char* monthStr, Adafruit_AlphaNum4 &display) {
     display.writeDisplay();
     delay(updateInterval);
     
-    // Fissa progressivamente i caratteri da sinistra a destra
+    // Progressively fix characters from left to right
     int elapsed = millis() - startTime;
     for(int i = 0; i < len; i++) {
       if(elapsed > (shuffleTime/len * i) && !charFixed[i]) {
@@ -421,22 +451,22 @@ void animateMonth(const char* monthStr, Adafruit_AlphaNum4 &display) {
     }
   }
   
-  // Mostra il testo finale
+  // Show the final text
   displayMonthRight(monthStr, display);
 }
 
-// Funzione per visualizzare il mese allineato a destra
+// Function to display the month right-aligned
 void displayMonthRight(const char* monthStr, Adafruit_AlphaNum4 &display) {
   display.clear();
   int len = strlen(monthStr);
-  int startPos = 4 - len;  // Calcola la posizione di partenza per l'allineamento a destra
+  int startPos = 4 - len;  // Calculate the starting position for right alignment
   
-  // Riempi con spazi le posizioni iniziali
+  // Fill initial positions with spaces
   for(int i = 0; i < startPos; i++) {
     display.writeDigitAscii(i, ' ');
   }
   
-  // Scrivi il mese partendo dalla posizione calcolata
+  // Write the month starting from the calculated position
   for(int i = 0; i < len && i < 4; i++) {
     display.writeDigitAscii(startPos + i, monthStr[i]);
   }
@@ -444,110 +474,110 @@ void displayMonthRight(const char* monthStr, Adafruit_AlphaNum4 &display) {
   display.writeDisplay();
 }
 
-// Funzione per visualizzare il giorno centrato nel display
+// Function to display the day centered in the display
 void displayDayCentered(int day, TM1637Display &display) {
-  uint8_t segments[] = { 0, 0, 0, 0 };  // Array per i 4 digit
+  uint8_t segments[] = { 0, 0, 0, 0 };  // Array for the 4 digits
   
-  // Converti il giorno in due cifre
+  // Convert the day into two digits
   int tens = day / 10;
   int ones = day % 10;
   
-  // Posiziona le cifre al centro (posizioni 1 e 2)
+  // Position the digits in the center (positions 1 and 2)
   segments[1] = display.encodeDigit(tens);
   segments[2] = display.encodeDigit(ones);
   
-  // Lascia vuote le posizioni esterne (0 e 3)
+  // Leave outer positions (0 and 3) blank
   segments[0] = 0;
   segments[3] = 0;
   
-  // Visualizza sul display
+  // Display on the screen
   display.setSegments(segments);
 }
 
-// Funzione per animare tutti i display in sequenza
+// Function to animate all displays in sequence
 void animateAllDisplays(int year = 2024, int month = 1, int day = 31, int time = 1234) {
-  // Valori predefiniti se non specificati
+  // Default values if not specified
   const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
                          "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
   
-  // Conversione mese in stringa
+  // Convert month to string
   const char* monthStr = months[month-1];
   
-  // Sequenza ROSSA
-  Serial.println("Animazione display ROSSI...");
+  // RED Sequence
+  Serial.println("Animating RED displays...");
   
-  // Mese rosso
+  // Red month
   animateMonth(monthStr, displayRedMonth);
-  delay(200);  // Pausa tra animazioni
+  delay(200);  // Pause between animations
   
-  // Giorno rosso
+  // Red day
   animateNumber(displayRedDay, day, 2);
   delay(200);
   
-  // Anno rosso
+  // Red year
   animateNumber(displayRedYear, year);
   delay(200);
   
-  // Orario rosso
+  // Red time
   animateNumber(displayRedTime, time, 4, true);
   redTimeValue = String(time);
-  delay(500);  // Pausa più lunga tra colori
+  delay(500);  // Longer pause between colors
   
-  // Sequenza VERDE
-  Serial.println("Animazione display VERDI...");
+  // GREEN Sequence
+  Serial.println("Animating GREEN displays...");
   
-  // Mese verde
+  // Green month
   animateMonth(monthStr, displayGreenMonth);
   delay(200);
   
-  // Giorno verde
+  // Green day
   animateNumber(displayGreenDay, day, 2);
   delay(200);
   
-  // Anno verde
+  // Green year
   animateNumber(displayGreenYear, year);
   delay(200);
   
-  // Orario verde
+  // Green time
   animateNumber(displayGreenTime, time, 4, true);
   greenTimeValue = String(time);
-  delay(500);  // Pausa più lunga tra colori
+  delay(500);  // Longer pause between colors
   
-  // Sequenza ARANCIONE
-  Serial.println("Animazione display ARANCIONI...");
+  // AMBER Sequence
+  Serial.println("Animating AMBER displays...");
   
-  // Mese arancione
+  // Amber month
   animateMonth(monthStr, displayAmberMonth);
   delay(200);
   
-  // Giorno arancione
+  // Amber day
   animateNumber(displayAmberDay, day, 2);
   delay(200);
   
-  // Anno arancione
+  // Amber year
   animateNumber(displayAmberYear, year);
   delay(200);
   
-  // Orario arancione
+  // Amber time
   animateNumber(displayAmberTime, time, 4, true);
   amberTimeValue = String(time);
   
-  // Reset delle variabili per il lampeggio
+  // Reset variables for blinking
   previousMillis = 0;
   colonOn = true;
   
-  Serial.println("Sequenza completa!");
+  Serial.println("Sequence complete!");
 }
 
-// Funzione per aggiornare il lampeggio dei due punti su tutti i display
+// Function to update the blinking colon on all displays
 void updateTimeWithBlink() {
   unsigned long currentMillis = millis();
   
   if (currentMillis - previousMillis >= blinkInterval) {
     previousMillis = currentMillis;
-    colonOn = !colonOn;  // Inverte lo stato dei due punti
+    colonOn = !colonOn;  // Invert the colon state
     
-    // Aggiorna tutti i display dell'orario con i due punti
+    // Update all time displays with the colon
     if(redTimeValue.length() > 0) {
       displayRedTime.showNumberDecEx(redTimeValue.toInt(), colonOn ? 0b01000000 : 0, true);
     }
@@ -562,85 +592,29 @@ void updateTimeWithBlink() {
   }
 }
 
-// Funzione per aggiornare i display verdi con l'orario NTP
-void updateGreenDisplaysFromNTP() {
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    Serial.println("Impossibile ottenere l'ora da NTP");
-    return;
-  }
-  
-  Serial.println("Ora ottenuta dal server NTP");
-  
-  // Formatta l'ora per il display (HHMM)
-  int hours = timeinfo.tm_hour;
-  int minutes = timeinfo.tm_min;
-  int timeValue = hours * 100 + minutes;
-  
-  // Formatta la data
-  int year = timeinfo.tm_year + 1900;
-  int month = timeinfo.tm_mon + 1;
-  int day = timeinfo.tm_mday;
-  
-  // Array dei nomi dei mesi
-  const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
-                         "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
-  
-  // Aggiorna i display verdi con animazione
-  animateMonth(months[month-1], displayGreenMonth);
-  delay(200);
-  animateNumber(displayGreenDay, day, 2);
-  delay(200);
-  animateNumber(displayGreenYear, year);
-  delay(200);
-  animateNumber(displayGreenTime, timeValue, 4, true);
-  greenTimeValue = String(timeValue);
-  
-  Serial.println("Display verdi aggiornati con l'ora NTP");
-}
-
-// Funzione per aggiornare la luminosità in base all'ora
-void updateBrightness() {
-  struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
-    // Calcola l'ora e i minuti come un valore numerico per facilitare il confronto
-    int currentTime = timeinfo.tm_hour * 100 + timeinfo.tm_min;
-    
-    // Luminosità alta (100%) dalle 8:00 (800) alle 21:30 (2130)
-    // Luminosità bassa (65%) dalle 21:31 (2131) alle 7:59 (759)
-    bool isHighBrightness = (currentTime >= 800 && currentTime <= 2130);
-    
-    // Imposta la luminosità per tutti i display
-    int tm1637Brightness = isHighBrightness ? 7 : 4;  // TM1637: 7 = 100%, 4 = ~57%
-    int ht16k33Brightness = isHighBrightness ? 15 : 10; // HT16K33: 15 = 100%, 10 = ~67%
-    
-    // Display ROSSI
-    displayRedTime.setBrightness(tm1637Brightness);
-    displayRedYear.setBrightness(tm1637Brightness);
-    displayRedDay.setBrightness(tm1637Brightness);
-    displayRedMonth.setBrightness(ht16k33Brightness);
-    
-    // Display VERDI
-    displayGreenTime.setBrightness(tm1637Brightness);
-    displayGreenYear.setBrightness(tm1637Brightness);
-    displayGreenDay.setBrightness(tm1637Brightness);
-    displayGreenMonth.setBrightness(ht16k33Brightness);
-    
-    // Display ARANCIONI
-    displayAmberTime.setBrightness(tm1637Brightness);
-    displayAmberYear.setBrightness(tm1637Brightness);
-    displayAmberDay.setBrightness(tm1637Brightness);
-    displayAmberMonth.setBrightness(ht16k33Brightness);
-  }
-}
-
 void setup() {
   Serial.begin(115200);
   
-  // Inizializzazione I2C per i display alfanumerici
-  Wire.begin(SHARED_SDA, SHARED_SCL);
+  // Initialize the random number generator using the noise on an analog pin
+  // It's a simple way to get a different random seed on each boot
+  randomSeed(analogRead(A0));
   
-  // Inizializzazione display ROSSI
+  // Initialize I2C for the alphanumeric displays
+  Wire.begin(SHARED_SDA, SHARED_SCL);
+
+  // Initialize RTC
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC module!");
+    while (1);
+  }
+
+  if (rtc.lostPower()) {
+    Serial.println("RTC lost power, setting time to compile time...");
+    // Set the RTC to the date and time this sketch was compiled
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+  
+  // Initialize RED displays
   displayRedTime.setBrightness(5);
   displayRedTime.clear();
   
@@ -654,7 +628,7 @@ void setup() {
   displayRedMonth.setBrightness(15);
   displayRedMonth.clear();
   
-  // Inizializzazione display ARANCIONI
+  // Initialize AMBER displays
   displayAmberTime.setBrightness(5);
   displayAmberTime.clear();
   
@@ -668,7 +642,7 @@ void setup() {
   displayAmberMonth.setBrightness(15);
   displayAmberMonth.clear();
   
-  // Inizializzazione display VERDI
+  // Initialize GREEN displays
   displayGreenTime.setBrightness(5);
   displayGreenTime.clear();
   
@@ -682,21 +656,29 @@ void setup() {
   displayGreenMonth.setBrightness(15);
   displayGreenMonth.clear();
   
-  // Configurazione pin buzzer
+  // Configure buzzer pin
   pinMode(BUZZER_PIN, OUTPUT);
   
-  // Connessione WiFi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.print("Connesso a WiFi. Indirizzo IP: ");
-  Serial.println(WiFi.localIP());
+  // WiFi connection -> Create Access Point
+  Serial.println("Configuring Access Point...");
+  WiFi.softAP(ap_ssid, ap_password);
   
-  // Avvio del server e configurazione dei vari endpoint
+  IPAddress myIP = WiFi.softAPIP();
+  Serial.print("Access Point started. IP address: ");
+  Serial.println(myIP);
+
+  // Start DNS server for Captive Portal
+  dnsServer.start(53, "*", myIP);
+  Serial.println("DNS server for Captive Portal started");
+  
+  // Start the server and configure the various endpoints
   server.on("/", HTTP_GET, []() {
+    server.send(200, "text/html", index_html);
+  });
+
+  // Add a "catch-all" handler for the Captive Portal
+  // If the client requests a page that doesn't exist, we redirect to the main page.
+  server.onNotFound([]() {
     server.send(200, "text/html", index_html);
   });
   
@@ -710,6 +692,7 @@ void setup() {
       if(color == "red") {
         animateMonth(months[month-1], displayRedMonth);
       } else if(color == "green") {
+        greenMonth = month; // Buffer the month for the RTC
         animateMonth(months[month-1], displayGreenMonth);
       } else {
         animateMonth(months[month-1], displayAmberMonth);
@@ -726,6 +709,7 @@ void setup() {
       if(color == "red") {
         animateNumber(displayRedDay, day, 2);
       } else if(color == "green") {
+        greenDay = day; // Buffer the day for the RTC
         animateNumber(displayGreenDay, day, 2);
       } else {
         animateNumber(displayAmberDay, day, 2);
@@ -741,6 +725,7 @@ void setup() {
     if(color == "red") {
       animateNumber(displayRedYear, year);
     } else if(color == "green") {
+      greenYear = year; // Buffer the year for the RTC
       animateNumber(displayGreenYear, year);
     } else {
       animateNumber(displayAmberYear, year);
@@ -754,13 +739,20 @@ void setup() {
     int time = timeStr.toInt();
     
     if(color == "red") {
-      redTimeValue = timeStr;  // Memorizza il valore per il lampeggio
+      redTimeValue = timeStr;  // Store the value for blinking
       animateNumber(displayRedTime, time, 4, true);
     } else if(color == "green") {
-      greenTimeValue = timeStr;  // Memorizza il valore per il lampeggio
+      greenTimeValue = timeStr;  // Store the value for blinking
+      
+      // Set the time on the RTC
+      greenHour = time / 100;
+      greenMinute = time % 100;
+      rtc.adjust(DateTime(greenYear, greenMonth, greenDay, greenHour, greenMinute, 0));
+      Serial.println("RTC updated with the new time!");
+      
       animateNumber(displayGreenTime, time, 4, true);
     } else { // amber
-      amberTimeValue = timeStr;  // Memorizza il valore per il lampeggio
+      amberTimeValue = timeStr;  // Store the value for blinking
       animateNumber(displayAmberTime, time, 4, true);
     }
     server.send(200, "text/plain", "OK");
@@ -772,87 +764,121 @@ void setup() {
     int day = server.arg("day").toInt() > 0 ? server.arg("day").toInt() : 1;
     int time = server.arg("time").toInt() >= 0 ? server.arg("time").toInt() : 0;
     
-    // Avvia l'animazione
+    // Start the animation
     animateAllDisplays(year, month, day, time);
     
-    server.send(200, "text/plain", "Animazione completata!");
+    server.send(200, "text/plain", "Animation complete!");
   });
   
   server.begin();
   
-  // Esegui l'animazione completa all'avvio (UNA SOLA VOLTA)
-  animateAllDisplays(2024, 1, 1, 0000);
+  // --- NEW STARTUP LOGIC WITH RANDOM DATES ---
   
-  // Pulisci tutte le variabili
-  redTimeValue = "";
-  amberTimeValue = "";
+  // Month names for display
+  const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
+                         "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+
+  // Calculate how many famous dates we have
+  int numDates = sizeof(famousDates) / sizeof(famousDates[0]);
+
+  // Choose two different random indexes for red and amber displays
+  int redIndex = random(numDates);
+  int amberIndex = random(numDates);
+  while (amberIndex == redIndex) {
+    amberIndex = random(numDates);
+  }
+
+  // Extract dates from the array
+  FamousDate redDate = famousDates[redIndex];
+  FamousDate amberDate = famousDates[amberIndex];
+
+  Serial.println("Random RED date: " + String(redDate.description));
+  Serial.println("Random AMBER date: " + String(amberDate.description));
+
+  // Animate RED displays (Destination Time)
+  animateMonth(months[redDate.month - 1], displayRedMonth);
+  delay(200);
+  animateNumber(displayRedDay, redDate.day, 2);
+  delay(200);
+  animateNumber(displayRedYear, redDate.year);
+  delay(200);
+  int redTime = redDate.hour * 100 + redDate.minute;
+  animateNumber(displayRedTime, redTime, 4, true);
+  redTimeValue = String(redTime);
+  delay(500);
+
+  // Animate AMBER displays (Last Time Departed)
+  animateMonth(months[amberDate.month - 1], displayAmberMonth);
+  delay(200);
+  animateNumber(displayAmberDay, amberDate.day, 2);
+  delay(200);
+  animateNumber(displayAmberYear, amberDate.year);
+  delay(200);
+  int amberTime = amberDate.hour * 100 + amberDate.minute;
+  animateNumber(displayAmberTime, amberTime, 4, true);
+  amberTimeValue = String(amberTime);
+
+  // The old static animation is removed
+  // animateAllDisplays(2024, 1, 1, 0000);
+  
+  // Clear all variables (except those just set)
   greenTimeValue = "";
   
-  // Dopo la connessione WiFi
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("");
-    Serial.print("Connesso a WiFi. Indirizzo IP: ");
-    Serial.println(WiFi.localIP());
-    
-    // Configura il client NTP
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-    
-    // Sincronizza e aggiorna i display verdi
-    updateGreenDisplaysFromNTP();
-  }
+  // Update the GREEN display (Present Time) with the current time from the RTC
+  DateTime now = rtc.now();
+  int year = now.year();
+  int month = now.month();
+  int day = now.day();
+  int timeValue = now.hour() * 100 + now.minute();
+
+  displayMonthRight(months[month-1], displayGreenMonth);
+  displayDayCentered(day, displayGreenDay);
+  displayGreenYear.showNumberDec(year, false);
+  displayGreenTime.showNumberDecEx(timeValue, 0b01000000, true);
+  greenTimeValue = String(timeValue);
+  lastMinuteDisplayed = now.minute();
 }
 
 void loop() {
+  dnsServer.processNextRequest(); // Handle DNS requests for the Captive Portal
   server.handleClient();
-  updateTimeWithBlink();  // Aggiorna il lampeggio per tutti i display
+  updateTimeWithBlink();  // Update the blinking colon for all displays
   
-  // Ottieni l'ora corrente
-  struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
-    // Aggiornamento minutario 
-    if (timeinfo.tm_min != lastMinuteDisplayed) {
-      // Formatta l'ora per il display (HHMM)
-      int hours = timeinfo.tm_hour;
-      int minutes = timeinfo.tm_min;
-      int timeValue = hours * 100 + minutes;
-      
-      // Aggiorna solo il display verde dell'ora, senza animazione
-      displayGreenTime.showNumberDecEx(timeValue, 0b01000000, true);
-      greenTimeValue = String(timeValue);
-      
-      // Se cambiano ora, giorno, mese o anno, aggiorna anche quelli
-      static int lastDay = -1, lastMonth = -1, lastYear = -1;
-      
-      if (timeinfo.tm_mday != lastDay) {
-        displayDayCentered(timeinfo.tm_mday, displayGreenDay);
-        lastDay = timeinfo.tm_mday;
-      }
-      
-      if (timeinfo.tm_mon != lastMonth) {
-        const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
-                               "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
-        displayMonthRight(months[timeinfo.tm_mon], displayGreenMonth);
-        lastMonth = timeinfo.tm_mon;
-      }
-      
-      if (timeinfo.tm_year != lastYear) {
-        int year = timeinfo.tm_year + 1900;
-        displayGreenYear.showNumberDec(year);
-        lastYear = timeinfo.tm_year;
-      }
-      
-      // Aggiorna la luminosità quando cambia il minuto
-      updateBrightness();
-      
-      // Controllo per la sincronizzazione all'inizio dell'ora
-      if (timeinfo.tm_min == 0) {  // Se siamo all'inizio dell'ora (XX:00)
-        if (WiFi.status() == WL_CONNECTED) {
-          Serial.println("Sincronizzazione NTP all'inizio dell'ora");
-          updateGreenDisplaysFromNTP();
-        }
-      }
-      
-      lastMinuteDisplayed = timeinfo.tm_min;
+  // All NTP-based logic (getLocalTime) is removed
+  // Add logic to update the green display with the RTC
+  DateTime now = rtc.now();
+
+  // Per-minute update
+  if (now.minute() != lastMinuteDisplayed) {
+    // Format the time for the display (HHMM)
+    int hours = now.hour();
+    int minutes = now.minute();
+    int timeValue = hours * 100 + minutes;
+    
+    // Update only the green time display, without animation
+    displayGreenTime.showNumberDecEx(timeValue, 0b01000000, true);
+    greenTimeValue = String(timeValue);
+    
+    // If day, month, or year change, update those as well
+    static int lastDay = -1, lastMonth = -1, lastYear = -1;
+    
+    if (now.day() != lastDay) {
+      displayDayCentered(now.day(), displayGreenDay);
+      lastDay = now.day();
     }
+    
+    if (now.month() != lastMonth) {
+      const char* months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
+                             "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+      displayMonthRight(months[now.month()-1], displayGreenMonth);
+      lastMonth = now.month();
+    }
+    
+    if (now.year() != lastYear) {
+      displayGreenYear.showNumberDec(now.year());
+      lastYear = now.year();
+    }
+    
+    lastMinuteDisplayed = now.minute();
   }
 }
