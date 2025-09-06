@@ -32,7 +32,11 @@ FamousDate famousDates[] = {
   {1492, 10, 12, 12, 0, "Discovery of America"},
   {1989, 11, 9, 18, 53, "Fall of the Berlin Wall"},
   {1776, 7, 4, 12, 0, "USA Declaration of Independence"},
-  {1945, 5, 8, 23, 1, "End of WWII in Europe"}
+  {1945, 5, 8, 23, 1, "End of WWII in Europe"},
+  {1961, 4, 12, 6, 7, "First Man in Space"},
+  {1977, 5, 25, 12, 0, "Star Wars Release"},
+  {1912, 4, 15, 2, 20, "Sinking of the Titanic"},
+  {1991, 8, 6, 12, 0, "World Wide Web Public"}
 };
 
 // WiFi Configuration in Access Point mode
@@ -594,6 +598,10 @@ void updateTimeWithBlink() {
 
 void setup() {
   Serial.begin(115200);
+  
+  // Add a small delay on boot to allow all peripherals to stabilize.
+  // This helps prevent initialization errors on a cold start.
+  delay(500); 
   
   // Initialize the random number generator using the ESP32's hardware generator
   // It's the most robust method to ensure true randomness on each boot.
