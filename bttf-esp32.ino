@@ -615,13 +615,13 @@ void setup() {
   }
   
   // Initialize RED displays
-  displayRedTime.setBrightness(5);
+  displayRedTime.setBrightness(7); // Max brightness
   displayRedTime.clear();
   
-  displayRedYear.setBrightness(5);
+  displayRedYear.setBrightness(7); // Max brightness
   displayRedYear.clear();
   
-  displayRedDay.setBrightness(5);
+  displayRedDay.setBrightness(7); // Max brightness
   displayRedDay.clear();
   
   displayRedMonth.begin(RED_MONTH_ADDR);
@@ -629,13 +629,13 @@ void setup() {
   displayRedMonth.clear();
   
   // Initialize AMBER displays
-  displayAmberTime.setBrightness(5);
+  displayAmberTime.setBrightness(7); // Max brightness
   displayAmberTime.clear();
   
-  displayAmberYear.setBrightness(5);
+  displayAmberYear.setBrightness(7); // Max brightness
   displayAmberYear.clear();
   
-  displayAmberDay.setBrightness(5);
+  displayAmberDay.setBrightness(7); // Max brightness
   displayAmberDay.clear();
   
   displayAmberMonth.begin(AMBER_MONTH_ADDR);
@@ -643,13 +643,13 @@ void setup() {
   displayAmberMonth.clear();
   
   // Initialize GREEN displays
-  displayGreenTime.setBrightness(5);
+  displayGreenTime.setBrightness(7); // Max brightness
   displayGreenTime.clear();
   
-  displayGreenYear.setBrightness(5);
+  displayGreenYear.setBrightness(7); // Max brightness
   displayGreenYear.clear();
   
-  displayGreenDay.setBrightness(5);
+  displayGreenDay.setBrightness(7); // Max brightness
   displayGreenDay.clear();
   
   displayGreenMonth.begin(GREEN_MONTH_ADDR);
