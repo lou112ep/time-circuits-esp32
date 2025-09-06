@@ -595,9 +595,9 @@ void updateTimeWithBlink() {
 void setup() {
   Serial.begin(115200);
   
-  // Initialize the random number generator using the noise on an analog pin
-  // It's a simple way to get a different random seed on each boot
-  randomSeed(analogRead(A0));
+  // Initialize the random number generator using the ESP32's hardware generator
+  // It's the most robust method to ensure true randomness on each boot.
+  randomSeed(esp_random());
   
   // Initialize I2C for the alphanumeric displays
   Wire.begin(SHARED_SDA, SHARED_SCL);
